@@ -1,0 +1,33 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - image.driedmango.io
+  resources:
+  - imagebuilds
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - image.driedmango.io
+  resources:
+  - imagebuilds/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - image.driedmango.io
+  resources:
+  - imagebuilds/status
+  verbs:
+  - get
+  - patch
+  - update

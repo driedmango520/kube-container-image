@@ -1,0 +1,137 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.11.1
+  creationTimestamp: null
+  name: imagebuilds.image.driedmango.org
+spec:
+  group: image.driedmango.org
+  names:
+    kind: ImageBuild
+    listKind: ImageBuildList
+    plural: imagebuilds
+    singular: imagebuild
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[-1:].type
+      name: State
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1
+    schema:
+      openAPIV3Schema:
+        description: ImageBuild is the Schema for the imagebuilds API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ImageBuildSpec defines the desired state of ImageBuild
+            properties:
+              ImageAddr:
+                description: 要保存的镜像完整地址信息
+                type: string
+              containerName:
+                description: pod里面的容器名
+                type: string
+              maxRetry:
+                description: 推送失败时最大重试次数
+                format: int32
+                type: integer
+              namespace:
+                description: pod所在的命名空间
+                type: string
+              podName:
+                description: 'INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
+                  Important: Run "make" to regenerate code after modifying this file'
+                type: string
+              secretName:
+                description: 镜像保存的仓库信息，存储在secret中
+                type: string
+              spaceLeft:
+                description: 镜像仓库剩余配额，单位为字节
+                format: int64
+                type: integer
+            type: object
+          status:
+            description: ImageBuildStatus defines the observed state of ImageBuild
+            properties:
+              completionTime:
+                description: 任务结束时间
+                format: date-time
+                type: string
+              conditions:
+                items:
+                  description: ImageBuildCondition describes the state of the job
+                    at a certain point.
+                  properties:
+                    lastTransitionTime:
+                      description: Last time the condition transitioned from one status
+                        to another.
+                      format: date-time
+                      type: string
+                    lastUpdateTime:
+                      description: The last time this condition was updated.
+                      format: date-time
+                      type: string
+                    message:
+                      description: A human readable message indicating details about
+                        the transition.
+                      type: string
+                    reason:
+                      description: The reason for the condition's last transition.
+                      type: string
+                    status:
+                      description: Status of the condition, one of True, False, Unknown.
+                      type: string
+                    type:
+                      description: ImageConditionType defines all kinds of types of
+                        JobStatus.
+                      type: string
+                  required:
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastReconcileTime:
+                description: 上次调度时间
+                format: date-time
+                type: string
+              phase:
+                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
+                  of cluster Important: Run "make" to regenerate code after modifying
+                  this file'
+                type: string
+              reason:
+                description: 失败原因
+                type: string
+              retryTimes:
+                description: 已经重试次数
+                format: int32
+                type: integer
+              startTime:
+                description: 任务启动时间
+                format: date-time
+                type: string
+            required:
+            - conditions
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

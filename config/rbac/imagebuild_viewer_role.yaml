@@ -1,0 +1,27 @@
+# permissions for end users to view imagebuilds.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: imagebuild-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: kube-container-image
+    app.kubernetes.io/part-of: kube-container-image
+    app.kubernetes.io/managed-by: kustomize
+  name: imagebuild-viewer-role
+rules:
+- apiGroups:
+  - image.driedmango.org
+  resources:
+  - imagebuilds
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - image.driedmango.org
+  resources:
+  - imagebuilds/status
+  verbs:
+  - get
