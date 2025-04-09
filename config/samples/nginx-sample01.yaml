@@ -1,0 +1,13 @@
+apiVersion: image.driedmango.io/v1
+kind: ImageBuild
+metadata:
+  name: imagebuild-sample1
+  namespace: default
+spec:
+  containerName: nginx
+  podName: image-build-test-pod
+  namespace: default
+  secretName: docker-secret
+  ImageAddr: "registry.us-west-1.aliyuncs.com/dried-mango/test-build:v0.1"
+  spaceLeft: 26843545600
+  maxRetry: 3

@@ -7,10 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -24,10 +22,6 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/sirupsen/logrus"
-)
-
-const (
-	DockerSecretPath = "/etc/docker/image-committer/.dockerconfigjson"
 )
 
 type RepoAuth struct {
@@ -49,7 +43,7 @@ type ImageSaver interface {
 	SaveImage(ctx context.Context, containerID, newImageTag string) error
 	RegistryLogin(ctx context.Context) error
 	PushCheck(ctx context.Context, newImageTag string, spaceLeft int64) error
-	PushImage(ctx context.Context, imageAddr string) error
+	PushImage(ctx context.Context, podName, imageAddr string) error
 }
 
 type DockerImageSaver struct {
@@ -61,7 +55,8 @@ type DockerImageSaver struct {
 }
 
 const (
-	ContainerEngineDocker = "docker"
+	ContainerEngineDocker     = "docker"
+	ContainerEngineContainerd = "containerd"
 )
 
 var ImageSaverProvider = map[string]func(registryAddr, registryUser, registryPass string) ImageSaver{
@@ -212,7 +207,7 @@ func (s *DockerImageSaver) PushCheck(ctx context.Context, newImageTag string, sp
 }
 
 // PushImage 推送镜像
-func (s *DockerImageSaver) PushImage(ctx context.Context, imageAddr string) error {
+func (s *DockerImageSaver) PushImage(ctx context.Context, podName, imageAddr string) error {
 	registryHost, err := ParseImageRepo(s.registryAddr)
 	if err != nil {
 		logrus.Errorf("RepoParseError:%+v", err)
@@ -239,7 +234,7 @@ func (s *DockerImageSaver) PushImage(ctx context.Context, imageAddr string) erro
 	})
 
 	defer pushResp.Close()
-	resultWriter := PushResultWrite{}
+	resultWriter := PushWriter{podName: podName}
 	_, err = io.Copy(resultWriter, pushResp)
 	if err != nil {
 		logrus.Errorf("PushImageError:%+v", err)
@@ -280,94 +275,6 @@ func (s *DockerImageSaver) calculateNewLayerSize(ctx context.Context, imageAddr 
 	}
 
 	return totalSize, nil
-}
-
-func ReadImageSecret(registryAddr string, secretPath string) (loginUserName string, loginPassword string, err error) {
-	content, err := ioutil.ReadFile(secretPath) //读取整个文件
-	//content, err := ioutil.ReadFile(DockerSecretPath) //读取整个文件
-	if err != nil {
-		logrus.Errorf("ReadFileError:%+v", err)
-		return
-	}
-
-	dockerSecret := &DockerSecret{}
-	err = json.Unmarshal(content, dockerSecret)
-	if err != nil {
-		logrus.Errorf("UnmarshalError:%+v", err)
-		return
-	}
-
-	for key, val := range dockerSecret.Auths {
-		if key != registryAddr {
-			continue
-		}
-		loginUserName = val.Username
-		loginPassword = val.Password
-	}
-	return loginUserName, loginPassword, nil
-}
-
-func Execute(podName, namespace, imageAddr, containerName string) (err error) {
-	if !isFileExist(DockerSecretPath) {
-		logrus.Errorf("getClientError:%+v", "获取秘钥信息失败：文件不存在")
-		err = fmt.Errorf("获取秘钥信息失败：文件不存在")
-		return
-	}
-
-	if podName == "" || namespace == "" || imageAddr == "" {
-		err = fmt.Errorf("pod名称或者命名空间为空, podName:%s, namespace: %s, imageName: %s", podName, namespace, imageAddr)
-		logrus.Errorf("关键参数错误: %+v", err)
-		return err
-	}
-
-	var loginUserName string
-	var loginPassword string
-	//todo 解析 imageAddr 出 registryAddr
-
-	loginUserName, loginPassword, err = ReadImageSecret(imageAddr, DockerSecretPath)
-	if err != nil {
-		logrus.Errorf("ReadImageSecretError:%+v", err)
-		return
-	}
-
-	// 使用 DockerImageSaver优化下列逻辑
-	dockerImageSaver := NewDockerImageSaver(imageAddr, loginUserName, loginPassword)
-
-	ctx := context.Background()
-	imageID, err := dockerImageSaver.FilterContainer(ctx, podName, namespace, containerName)
-	if err != nil {
-		logrus.Errorf("FilterContainerError:%+v", err)
-		return err
-	}
-
-	// 制作镜像
-	err = dockerImageSaver.SaveImage(ctx, imageID, imageAddr)
-	if err != nil {
-		logrus.Errorf("SaveImageError:%+v", err)
-		return err
-	}
-
-	err = dockerImageSaver.RegistryLogin(ctx)
-	if err != nil {
-		logrus.Errorf("RegistryLoginError:%+v", err)
-		return err
-	}
-	err = dockerImageSaver.PushCheck(ctx, imageAddr, 0)
-	if err != nil {
-		logrus.Errorf("PushCheckError:%+v", err)
-		return err
-	}
-
-	begin := time.Now()
-	logrus.Infof("当前时间: %s, 镜像: %s 推送中......", begin.Format(time.RFC3339Nano), imageAddr)
-	err = dockerImageSaver.PushImage(ctx, imageAddr)
-	if err != nil {
-		logrus.Errorf("PushImageError:%+v", err)
-		return err
-	}
-	end := time.Now()
-	logrus.Infof("当前时间: %s, 用时: %fs,镜像推送结束", end.Format(time.RFC3339Nano), end.Sub(begin).Seconds())
-	return nil
 }
 
 type RepoMetadata struct {
@@ -477,18 +384,6 @@ func (r *RepoMetadata) LayerExistsInRepo(layerHash string) (bool, int64, error) 
 	return resp.StatusCode == http.StatusOK, layerSize, nil
 }
 
-func isFileExist(path string) bool {
-	_, err := os.Stat(path)
-	if err != nil {
-		if os.IsNotExist(err) { //文件不存在
-			return false
-		}
-	} else {
-		return true
-	}
-	return false
-}
-
 type PushResult struct {
 	Id             string      `json:"id"`
 	Status         string      `json:"status"`
@@ -497,10 +392,11 @@ type PushResult struct {
 	Error          string      `json:"error"`
 }
 
-type PushResultWrite struct {
+type PushWriter struct {
+	podName string
 }
 
-func (prw PushResultWrite) Write(p []byte) (n int, err error) {
+func (prw PushWriter) Write(p []byte) (n int, err error) {
 	n = len(p)
 	resultStr := string(p)
 	fmt.Println(resultStr)
@@ -513,7 +409,7 @@ func (prw PushResultWrite) Write(p []byte) (n int, err error) {
 		pushResult := &jsonmessage.JSONMessage{}
 		err = json.Unmarshal([]byte(result), pushResult)
 		if err != nil {
-			logrus.Errorf("当前时间: %s, 镜像推送Unmarshal日志失败，原因： %+v", curTime.Format(time.RFC3339), pushResult.Error.Error())
+			logrus.Errorf("当前时间: %s, pod: %s, 镜像推送Unmarshal日志失败，原因： %+v", prw.podName, curTime.Format(time.RFC3339), pushResult.Error.Error())
 			return 0, err
 		}
 		if pushResult.Error != nil && pushResult.Error.Message != "" {
@@ -521,14 +417,14 @@ func (prw PushResultWrite) Write(p []byte) (n int, err error) {
 				logrus.Infof("当前时间: %s, 镜像推送失败，原因： %+v", curTime.Format(time.RFC3339), pushResult.Error.Error())
 				return 0, PushImageErrorNoSpace
 			}
-			return 0, fmt.Errorf("当前时间: %s, 镜像保存报错: %v", curTime.Format(time.RFC3339), pushResult.Error)
+			return 0, fmt.Errorf("当前时间: %s, pod: %s, 镜像保存报错: %v", prw.podName, curTime.Format(time.RFC3339), pushResult.Error)
 		}
 		progress := 0
 		if pushResult.Progress != nil {
 			progress = int(pushResult.Progress.Current)
 		}
 		// TODO 每次有新进展时，打印日志
-		logrus.Infof("当前时间: %s, 镜像推送中，id: %v,状态：%v ,进度详情： %+v, 总进度：%v", curTime.Format(time.RFC3339), pushResult.ID, pushResult.Status, progress, pushResult.Progress.Total)
+		logrus.Infof("当前时间: %s,pod: %s, 镜像推送中，id: %v,状态：%v ,进度详情： %+v, 总进度：%v", prw.podName, curTime.Format(time.RFC3339), pushResult.ID, pushResult.Status, progress, pushResult.Progress.Total)
 	}
 
 	return n, nil

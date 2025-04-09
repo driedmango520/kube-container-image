@@ -229,8 +229,8 @@ func (r *ImageBuildReconciler) backgroundPushing(ctx context.Context) {
 			logger := log.FromContext(ctx).WithValues("imagebuild", req.buildImage.Namespace)
 			// Use DockerImageSaver to optimize the following logic
 			dockerImageSaver := NewDockerImageSaver(req.buildImage.Spec.ImageAddr, req.Username, req.Password)
-			//TODO 推送日志优化
-			err := dockerImageSaver.PushImage(ctx, req.buildImage.Spec.ImageAddr)
+
+			err := dockerImageSaver.PushImage(ctx, req.buildImage.Spec.PodName, req.buildImage.Spec.ImageAddr)
 			if err != nil {
 				logrus.Errorf("PushImageError:%+v", err)
 				// 失败会更新重试次数，再次入队

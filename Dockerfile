@@ -1,7 +1,9 @@
 # Build the manager binary
-FROM golang:1.19 as builder
+FROM registry.us-west-1.aliyuncs.com/dried-mango/golang:1.19 as builder
+# FROM golang:1.19 as builder
 ARG TARGETOS
 ARG TARGETARCH
+ENV GOPROXY http://goproxy.cn
 
 WORKDIR /workspace
 # Copy the Go Modules manifests
@@ -25,9 +27,9 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o ma
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+FROM registry.us-west-1.aliyuncs.com/dried-mango/ubuntu:22.04
 WORKDIR /
 COPY --from=builder /workspace/manager .
-USER 65532:65532
+# USER 65532:65532
 
 ENTRYPOINT ["/manager"]
